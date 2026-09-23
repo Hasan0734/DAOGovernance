@@ -150,6 +150,7 @@ contract DAOGovernance {
 
         proposal.status = ProposalStatus.Executed;
         proposal.executed = true;
+        
         require(
             governanceToken.transfer(
                 proposal.targetRecipient,
