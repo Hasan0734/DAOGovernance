@@ -51,10 +51,69 @@ describe("DAOGovernance", function () {
 
     it("2. Should reject zero-address recipients and empty requested allocations", async function () {
       const requestedAmt = ethers.parseEther("100");
+
       await expect(daoGovernance.connect(user1).propose("Bad address", ethers.ZeroAddress, requestedAmt))
         .to.be.revertedWith("Invalid recipient address");
+
+      await expect(daoGovernance.connect(user1).propose("Bad amount", recipient.address, 0))
+        .to.be.revertedWith("Requested amount must be > 0");
+    })
+    it("3. Should successfully log a valid proposal with active status structures", async function () {
+      const requestedAmt = ethers.parseEther("250");
+
+      await expect(daoGovernance.connect(user1).propose("Valid Server Upgrade Grant", recipient.address, requestedAmt))
+        .to.emit(daoGovernance, "CreatedProposal")
+        .withArgs(user1.address, 1);
+
+      const proposal = await daoGovernance.proposals(1);
+      expect(proposal.id).to.be.equal(1);
+      expect(proposal.proposer).to.be.equal(user1.address);
+      expect(proposal.targetRecipient).to.be.equal(recipient.address);
+      expect(proposal.requestedAmount).to.be.equal(requestedAmt);
+      expect(proposal.status).to.be.equal(1);
+
+    })
+
+    it("4. Should restrict proposalThreshold parameter adjustments to the contract owner", async function () {
+      const newThreshold = ethers.parseEther("200");
+
+      await expect(daoGovernance.connect(user1).setProposalThreshold(newThreshold)).to.be.revertedWith("Not the owner")
+
     })
   })
+
+  describe("Voting & Double-Voting Protection Layer", function () {
+    beforeEach(async function () {
+      const requestedAmt = ethers.parseEther("200");
+
+      await daoGovernance.connect(user1).propose("Core Infrastructure Update", recipient.address, requestedAmt);
+
+    })
+
+    it("5. Should reject voting attempts from addresses holding 0 governance weight", async function () {
+      await expect(
+        daoGovernance.connect(recipient).castVote(1, true))
+        .to.be.revertedWith("You have not power to vote");
+    })
+
+    it("6. Should prevent double-voting exploits on the same proposal ID", async function () {
+      expect(daoGovernance.connect(user1).castVote(1, true))
+
+      await expect(daoGovernance.connect(user1).castVote(1, true)).to.be.revertedWith("Already voted")
+
+    })
+
+    it("7. Should block voting actions once the active chronological deadline expires", async function () {
+      await ethers.provider.send("evm_increaseTime", [3 * 24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(daoGovernance.connect(user1).castVote(1, true))
+        .to.be.revertedWith("Vote deadline is passed.")
+    })
+
+  })
+
+
 
 });
 
